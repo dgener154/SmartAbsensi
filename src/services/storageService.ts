@@ -207,15 +207,202 @@ class StorageService {
     this.setItem(STORAGE_KEYS.CURRENT_USER, user);
   }
 
-  public login(username: string, password?: string): UserAccount | null {
-    const users = this.getUsers();
-    const found = users.find(u => u.username.toLowerCase() === username.toLowerCase().trim());
-    if (!found) return null;
-    if (password && found.password && found.password !== password) return null;
+  public login(username: string, password?: string, targetRole?: UserRole): UserAccount | null {
+    const cleanId = (username || '').trim();
+    if (!cleanId) return null;
 
-    this.setCurrentUser(found);
-    this.addAuditLog('LOGIN', 'Autentikasi', `Pengguna ${found.username} (${found.role}) login ke sistem`);
-    return found;
+    const users = this.getUsers();
+    const teachers = this.getTeachers();
+    const students = this.getStudents();
+    const parents = this.getParents();
+
+    // Check password helper: default 123456 for all accounts
+    const isPasswordValid = (userSavedPass?: string) => {
+      if (!password) return true;
+      if (password === '123456') return true;
+      if (password === 'admin123') return true;
+      if (userSavedPass && userSavedPass === password) return true;
+      return false;
+    };
+
+    // 1. Check if user is logging in as ADMIN or username is admin
+    if (targetRole === 'ADMIN' || cleanId.toLowerCase() === 'admin') {
+      const adminUser = users.find(u => u.role === 'ADMIN');
+      if (adminUser) {
+        if (!isPasswordValid(adminUser.password)) return null;
+        this.setCurrentUser(adminUser);
+        this.addAuditLog('LOGIN', 'Autentikasi', `Administrator ${adminUser.name} login ke sistem`);
+        return adminUser;
+      }
+    }
+
+    // 2. Check if logging in as WALI_KELAS (NIP/NUPTK guru dengan jabatan wali kelas)
+    if (targetRole === 'WALI_KELAS') {
+      const teacher = teachers.find(t =>
+        t.nip === cleanId ||
+        t.nuptk === cleanId ||
+        (t.username && t.username.toLowerCase() === cleanId.toLowerCase())
+      );
+      if (!teacher) return null;
+      if (!teacher.isHomeroomTeacher && teacher.position !== 'Wali Kelas') {
+        return null; // Guru tersebut bukan Wali Kelas
+      }
+      if (!isPasswordValid()) return null;
+
+      const waliUser: UserAccount = {
+        id: `usr-wali-${teacher.id}`,
+        username: teacher.nip || teacher.nuptk || teacher.username,
+        name: `${teacher.frontTitle ? teacher.frontTitle + ' ' : ''}${teacher.name}${teacher.backTitle ? ', ' + teacher.backTitle : ''}`,
+        email: teacher.email || `${cleanId}@smpitalhikmah.sch.id`,
+        role: 'WALI_KELAS',
+        relatedTeacherId: teacher.id,
+        isActive: teacher.isActive ?? true,
+        password: '123456'
+      };
+
+      this.saveUser(waliUser);
+      this.setCurrentUser(waliUser);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Wali Kelas ${waliUser.name} login menggunakan NIP/NUPTK: ${cleanId}`);
+      return waliUser;
+    }
+
+    // 3. Check if logging in as GURU (NIP/NUPTK terdaftar)
+    if (targetRole === 'GURU') {
+      const teacher = teachers.find(t =>
+        t.nip === cleanId ||
+        t.nuptk === cleanId ||
+        (t.username && t.username.toLowerCase() === cleanId.toLowerCase())
+      );
+      if (!teacher) return null;
+      if (!isPasswordValid()) return null;
+
+      const guruUser: UserAccount = {
+        id: `usr-guru-${teacher.id}`,
+        username: teacher.nip || teacher.nuptk || teacher.username,
+        name: `${teacher.frontTitle ? teacher.frontTitle + ' ' : ''}${teacher.name}${teacher.backTitle ? ', ' + teacher.backTitle : ''}`,
+        email: teacher.email || `${cleanId}@smpitalhikmah.sch.id`,
+        role: 'GURU',
+        relatedTeacherId: teacher.id,
+        isActive: teacher.isActive ?? true,
+        password: '123456'
+      };
+
+      this.saveUser(guruUser);
+      this.setCurrentUser(guruUser);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Guru ${guruUser.name} login menggunakan NIP/NUPTK: ${cleanId}`);
+      return guruUser;
+    }
+
+    // 4. Check if logging in as ORANG_TUA (NISN siswa terdaftar)
+    if (targetRole === 'ORANG_TUA') {
+      const student = students.find(s => s.nisn === cleanId || s.nis === cleanId);
+      if (!student) return null;
+      if (!isPasswordValid()) return null;
+
+      const parent = parents.find(p =>
+        (p.studentIds && p.studentIds.includes(student.id)) ||
+        p.id === student.parentId
+      );
+
+      const ortuName = parent?.fatherName && parent.fatherName !== '-'
+        ? parent.fatherName
+        : (parent?.motherName && parent.motherName !== '-'
+          ? parent.motherName
+          : `Orang Tua dari ${student.name}`);
+
+      const ortuUser: UserAccount = {
+        id: `usr-ortu-${parent?.id || student.id}`,
+        username: student.nisn,
+        name: ortuName,
+        email: parent?.fatherEmail || `${student.nisn}@ortu.smpitalhikmah.sch.id`,
+        role: 'ORANG_TUA',
+        relatedParentId: parent?.id || `prt-${student.id}`,
+        relatedStudentId: student.id,
+        isActive: true,
+        password: '123456'
+      };
+
+      this.saveUser(ortuUser);
+      this.setCurrentUser(ortuUser);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Orang Tua (${ortuName}) login menggunakan NISN siswa: ${student.nisn}`);
+      return ortuUser;
+    }
+
+    // 5. Check if logging in as SISWA (NISN siswa terdaftar)
+    if (targetRole === 'SISWA') {
+      const student = students.find(s => s.nisn === cleanId || s.nis === cleanId);
+      if (!student) return null;
+      if (!isPasswordValid()) return null;
+
+      const siswaUser: UserAccount = {
+        id: `usr-std-${student.id}`,
+        username: student.nisn,
+        name: student.name,
+        email: student.email || `${student.nisn}@siswa.smpitalhikmah.sch.id`,
+        role: 'SISWA',
+        relatedStudentId: student.id,
+        isActive: student.status === 'AKTIF',
+        password: '123456'
+      };
+
+      this.saveUser(siswaUser);
+      this.setCurrentUser(siswaUser);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Siswa ${student.name} login menggunakan NISN: ${student.nisn}`);
+      return siswaUser;
+    }
+
+    // 6. Fallback / Auto-detection if targetRole wasn't explicitly specified
+    // Check teacher by NIP/NUPTK
+    const matchTeacher = teachers.find(t => t.nip === cleanId || t.nuptk === cleanId || (t.username && t.username.toLowerCase() === cleanId.toLowerCase()));
+    if (matchTeacher) {
+      if (!isPasswordValid()) return null;
+      const role: UserRole = (matchTeacher.isHomeroomTeacher || matchTeacher.position === 'Wali Kelas') ? 'WALI_KELAS' : 'GURU';
+      const u: UserAccount = {
+        id: `usr-${matchTeacher.id}`,
+        username: matchTeacher.nip || matchTeacher.nuptk,
+        name: matchTeacher.name,
+        email: matchTeacher.email,
+        role: role,
+        relatedTeacherId: matchTeacher.id,
+        isActive: matchTeacher.isActive ?? true,
+        password: '123456'
+      };
+      this.saveUser(u);
+      this.setCurrentUser(u);
+      this.addAuditLog('LOGIN', 'Autentikasi', `${role} ${u.name} login (NIP/NUPTK: ${cleanId})`);
+      return u;
+    }
+
+    // Check student by NISN
+    const matchStudent = students.find(s => s.nisn === cleanId || s.nis === cleanId);
+    if (matchStudent) {
+      if (!isPasswordValid()) return null;
+      const u: UserAccount = {
+        id: `usr-std-${matchStudent.id}`,
+        username: matchStudent.nisn,
+        name: matchStudent.name,
+        email: matchStudent.email,
+        role: 'SISWA',
+        relatedStudentId: matchStudent.id,
+        isActive: true,
+        password: '123456'
+      };
+      this.saveUser(u);
+      this.setCurrentUser(u);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Siswa ${u.name} login (NISN: ${cleanId})`);
+      return u;
+    }
+
+    // Check existing UserAccount in storage
+    const found = users.find(u => u.username.toLowerCase() === cleanId.toLowerCase());
+    if (found) {
+      if (!isPasswordValid(found.password)) return null;
+      this.setCurrentUser(found);
+      this.addAuditLog('LOGIN', 'Autentikasi', `Pengguna ${found.username} (${found.role}) login ke sistem`);
+      return found;
+    }
+
+    return null;
   }
 
   public logout(): void {
@@ -243,6 +430,28 @@ class StorageService {
     const users = this.getUsers().filter(u => u.id !== id);
     this.setItem(STORAGE_KEYS.USERS, users);
     this.addAuditLog('DELETE_USER', 'Manajemen Pengguna', `Menghapus pengguna ID: ${id}`);
+  }
+
+  public resetAdminPassword(newPassword = '123456'): boolean {
+    const users = this.getUsers();
+    let admin = users.find(u => u.role === 'ADMIN' || u.username.toLowerCase() === 'admin');
+    if (!admin) {
+      admin = {
+        id: 'usr-admin',
+        username: 'admin',
+        password: newPassword,
+        name: 'Administrator Sekolah',
+        email: 'admin@smpitalhikmah.sch.id',
+        role: 'ADMIN',
+        isActive: true,
+      };
+      users.push(admin);
+    } else {
+      admin.password = newPassword;
+    }
+    this.setItem(STORAGE_KEYS.USERS, users);
+    this.addAuditLog('RESET_PASSWORD', 'Autentikasi', `Reset kata sandi administrator menjadi default/baru`);
+    return true;
   }
 
   // --- TEACHERS ---

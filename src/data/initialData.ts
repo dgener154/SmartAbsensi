@@ -1320,7 +1320,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'usr-admin',
     username: 'admin',
-    password: 'admin123',
+    password: '123456',
     name: 'Administrator Sekolah',
     email: 'admin@smpitalhikmah.sch.id',
     role: 'ADMIN',
@@ -1328,8 +1328,8 @@ export const INITIAL_USERS: UserAccount[] = [
   },
   {
     id: 'usr-guru',
-    username: 'guru',
-    password: 'guru123',
+    username: '198709182010012011', // NIP Siti Rahmawati
+    password: '123456',
     name: 'Siti Rahmawati, M.Pd.',
     email: 'siti.rahmawati@smpitalhikmah.sch.id',
     role: 'GURU',
@@ -1338,8 +1338,8 @@ export const INITIAL_USERS: UserAccount[] = [
   },
   {
     id: 'usr-wali',
-    username: 'walikelas',
-    password: 'wali123',
+    username: '198402102008011005', // NIP Budi Santoso (Wali Kelas VII-A)
+    password: '123456',
     name: 'Budi Santoso, S.Pd.',
     email: 'budi.santoso@smpitalhikmah.sch.id',
     role: 'WALI_KELAS',
@@ -1348,8 +1348,8 @@ export const INITIAL_USERS: UserAccount[] = [
   },
   {
     id: 'usr-siswa',
-    username: 'siswa',
-    password: 'siswa123',
+    username: '0112345671', // NISN Muhammad Rizky Pratama
+    password: '123456',
     name: 'Muhammad Rizky Pratama',
     email: 'rizky.pratama@siswa.smpitalhikmah.sch.id',
     role: 'SISWA',
@@ -1358,12 +1358,13 @@ export const INITIAL_USERS: UserAccount[] = [
   },
   {
     id: 'usr-ortu',
-    username: 'orangtua',
-    password: 'ortu123',
+    username: '0112345671', // NISN Siswa terdaftar
+    password: '123456',
     name: 'Ir. Ridwan Hakim (Orang Tua)',
     email: 'ridwan.hakim@gmail.com',
     role: 'ORANG_TUA',
     relatedParentId: 'prt-1',
+    relatedStudentId: 'std-101',
     isActive: true,
   }
 ];
